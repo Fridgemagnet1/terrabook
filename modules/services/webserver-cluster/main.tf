@@ -15,7 +15,7 @@ resource "aws_launch_configuration" "example" {
     security_groups  = [aws_security_group.instance.id]
     
     # Render the user data script as a template
-    user_data = templatefile("user-data.sh", {
+    user_data = templatefile("${path.module}/user-data.sh", {
         server_port = var.server_port
         db_address  = data.terraform_remote_state.db.outputs.address
         db_port     = data.terraform_remote_state.db.outputs.port
@@ -29,14 +29,17 @@ resource "aws_launch_configuration" "example" {
 
 resource "aws_security_group" "instance" {
     name   = "${var.cluster_name}-instance"
-    vpc_id = "vpc-0fd1322428e78ee62"  
-    
-    ingress {
-        from_port   = var.server_port
-        to_port     = var.server_port
-        protocol    = local.tcp_protocol
-        cidr_blocks = local.all_ips
-    }
+    vpc_id = "vpc-0fd1322428e78ee62" 
+}
+
+resource "aws_security_group_rule" "allow_server_http_inbound" {
+    type              = "ingress"
+    security_group_id = aws_security_group.instance.id
+
+    from_port   = var.server_port
+    to_port     = var.server_port
+    protocol    = local.tcp_protocol
+    cidr_blocks = local.all_ips
 }
 
 resource "aws_autoscaling_group" "example" {
@@ -84,14 +87,26 @@ resource "aws_lb_listener" "http" {
 resource "aws_security_group" "alb" {
     name   = "${var.cluster_name}-alb"
     vpc_id = "vpc-0fd1322428e78ee62" 
+}
 
-    # Allow inbound HTTP requests
-    ingress {
-        from_port   = local.http_port
-        to_port     = local.http_port
-        protocol    = local.tcp_protocol
-        cidr_blocks = local.all_ips
-    }
+resource "aws_security_group_rule" "allow_http_inbound" {
+    type              = "ingress"
+    security_group_id = aws_security_group.alb.id
+
+    from_port   = local.http_port
+    to_port     = local.http_port
+    protocol    = local.tcp_protocol
+    cidr_blocks = local.all_ips    
+}
+
+resource "aws_security_group_rule" "allow_all_outbound" {
+    type              = "egress"
+    security_group_id = aws_security_group.alb.id
+
+    from_port   = local.http_port
+    to_port     = local.http_port
+    protocol    = local.tcp_protocol
+    cidr_blocks = local.all_ips
 }
 
 resource "aws_lb_target_group" "asg" {
@@ -156,7 +171,7 @@ terraform {
     }
 }
 
-local { 
+locals { 
     http_port       = 80
     any_port        = 0
     any_protocol    = "-1"
